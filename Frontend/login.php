@@ -1,12 +1,16 @@
 <?php
-// -- Redirect jika sudah login ----------------------------------------
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+session_start();
+
 if (!empty($_SESSION['sso_token'])) {
     header('Location: dashboard.php');
     exit;
 }
+
+$sessionId = $_SESSION['sso_pending_session'] ?? '';
+$activationCode = $_SESSION['sso_activation_code'] ?? '';
+$captchaId = $_SESSION['sso_captcha_id'] ?? '';
+$captchaSvg = $_SESSION['sso_captcha_svg'] ?? '';
+$username = $_SESSION['sso_login_username'] ?? '';
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -14,29 +18,18 @@ if (!empty($_SESSION['sso_token'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login | SSO Portal - RSJD Amino Hospital</title>
-
-    <!-- Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
-    <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-    <!-- Custom CSS -->
     <link rel="stylesheet" href="login.css">
 </head>
 <body>
     <div class="container">
-
-        <!-- ============ BAGIAN KIRI: Branding & Info ============ -->
         <div class="left-panel">
             <div class="overlay"></div>
             <div class="content-wrapper">
-
                 <div class="brand">
-                    <div class="logo-icon">
-                        <i class="fa-solid fa-heart-pulse"></i>
-                    </div>
+                    <div class="logo-icon"><i class="fa-solid fa-heart-pulse"></i></div>
                     <div class="brand-text">
                         <h1>RSJD AMINO HOSPITAL</h1>
                         <p>Single Sign-On Portal</p>
@@ -49,26 +42,10 @@ if (!empty($_SESSION['sso_token'])) {
                 </div>
 
                 <div class="features-grid">
-                    <div class="feature-card">
-                        <i class="fa-solid fa-stethoscope"></i>
-                        <h3>SIMRS</h3>
-                        <p>Sistem informasi manajemen rumah sakit.</p>
-                    </div>
-                    <div class="feature-card">
-                        <i class="fa-solid fa-heart-circle-check"></i>
-                        <h3>AMINO_MOBILE</h3>
-                        <p>Layanan mobile untuk staf dan pasien.</p>
-                    </div>
-                    <div class="feature-card">
-                        <i class="fa-solid fa-capsules"></i>
-                        <h3>LAPOR_AMINO</h3>
-                        <p>Kanal pelaporan dan pengaduan internal.</p>
-                    </div>
-                    <div class="feature-card">
-                        <i class="fa-regular fa-user"></i>
-                        <h3>WBS</h3>
-                        <p>Whistleblowing system untuk pelaporan pelanggaran.</p>
-                    </div>
+                    <div class="feature-card"><i class="fa-solid fa-stethoscope"></i><h3>SIMRS</h3><p>Sistem informasi manajemen rumah sakit.</p></div>
+                    <div class="feature-card"><i class="fa-solid fa-heart-circle-check"></i><h3>AMINO_MOBILE</h3><p>Layanan mobile untuk staf dan pasien.</p></div>
+                    <div class="feature-card"><i class="fa-solid fa-capsules"></i><h3>LAPOR_AMINO</h3><p>Kanal pelaporan dan pengaduan internal.</p></div>
+                    <div class="feature-card"><i class="fa-regular fa-user"></i><h3>WBS</h3><p>Whistleblowing system untuk pelaporan pelanggaran.</p></div>
                 </div>
 
                 <div class="footer-left">
@@ -77,70 +54,80 @@ if (!empty($_SESSION['sso_token'])) {
             </div>
         </div>
 
-        <!-- ============ BAGIAN KANAN: Form Login ============ -->
         <div class="right-panel">
             <div class="login-wrapper">
-
                 <div class="login-header">
-                    <div class="login-icon">
-                        <i class="fa-solid fa-lock"></i>
-                    </div>
+                    <div class="login-icon"><i class="fa-solid fa-lock"></i></div>
                     <h2>Selamat datang</h2>
                     <p>Masuk dengan akun pegawai untuk melanjutkan ke portal aplikasi.</p>
                 </div>
 
                 <?php if (!empty($_GET['error'])): ?>
-                    <div class="alert alert-error"><i class="fa-solid fa-circle-exclamation"></i> Username atau password tidak dikenali. Silakan coba lagi.</div>
+                    <div class="alert alert-error"><i class="fa-solid fa-circle-exclamation"></i> Username, password, captcha, atau kode aktivasi tidak valid.</div>
                 <?php elseif (!empty($_GET['expired'])): ?>
                     <div class="alert alert-info"><i class="fa-solid fa-clock"></i> Sesi Anda telah berakhir. Silakan login kembali.</div>
                 <?php elseif (!empty($_GET['logout'])): ?>
                     <div class="alert alert-info"><i class="fa-solid fa-right-from-bracket"></i> Anda telah keluar dari sesi SSO.</div>
                 <?php endif; ?>
 
-                <!-- Form Login -->
-                <form action="auth.php" method="POST" class="login-form" id="loginForm">
-                    <div class="form-group">
-                        <label for="username">NIP / Username</label>
-                        <div class="input-icon">
-                            <i class="fa-regular fa-user icon-left"></i>
-                            <input type="text" id="username" name="username" placeholder="Masukkan NIP / Username" required>
-                        </div>
-                    </div>
+                <form action="auth.php" method="POST" class="login-form">
+                    <?php if ($sessionId && $activationCode && $captchaId): ?>
+                        <input type="hidden" name="action" value="activate">
+                        <input type="hidden" name="session_id" value="<?php echo htmlspecialchars($sessionId); ?>">
+                        <input type="hidden" name="captcha_id" value="<?php echo htmlspecialchars($captchaId); ?>">
+                        <input type="hidden" name="activation_code" value="<?php echo htmlspecialchars($activationCode); ?>">
+                    <?php else: ?>
+                        <input type="hidden" name="action" value="login">
+                    <?php endif; ?>
 
-                    <div class="form-group">
-                        <label for="password">Kata sandi</label>
-                        <div class="input-icon">
-                            <i class="fa-solid fa-lock icon-left"></i>
-                            <input type="password" id="password" name="password" placeholder="Masukkan kata sandi" required>
-                            <i class="fa-solid fa-eye icon-right" id="togglePassword" onclick="togglePassword()" title="Tampilkan sandi"></i>
+                    <?php if (!($sessionId && $activationCode && $captchaId)): ?>
+                        <div class="form-group">
+                            <label for="username">Username</label>
+                            <div class="input-icon">
+                                <i class="fa-regular fa-user icon-left"></i>
+                                <input type="text" id="username" name="username" value="<?php echo htmlspecialchars($username); ?>" placeholder="Masukkan username" required autofocus>
+                            </div>
                         </div>
-                    </div>
 
-                    <!-- Captcha / Token -->
-                    <div class="form-group">
-                        <label for="token">Kode Keamanan (Captcha)</label>
-                        <div class="captcha-container">
-                            <div class="captcha-box" id="captchaDisplay" onclick="generateCaptcha()" title="Klik untuk mengubah">487291</div>
-                            <button type="button" class="btn-refresh" onclick="generateCaptcha()" title="Ganti Token">
-                                <i class="fa-solid fa-rotate-right"></i>
-                            </button>
+                        <div class="form-group">
+                            <label for="password">Kata sandi</label>
+                            <div class="input-icon">
+                                <i class="fa-solid fa-lock icon-left"></i>
+                                <input type="password" id="password" name="password" placeholder="Masukkan kata sandi" required>
+                                <i class="fa-solid fa-eye icon-right" id="togglePassword" onclick="togglePassword()" title="Tampilkan sandi"></i>
+                            </div>
                         </div>
-                        <div class="input-icon" style="margin-top:12px;">
-                            <i class="fa-solid fa-key icon-left"></i>
-                            <input type="text" id="token" name="token" placeholder="Masukkan kode verifikasi" required>
+                    <?php else: ?>
+                        <div class="form-group">
+                            <label>Kode Aktivasi</label>
+                            <div class="captcha-container">
+                                <div class="captcha-box" style="min-height: 54px; font-size: 2rem; letter-spacing: 0.30rem; text-align:center; display:flex; align-items:center; justify-content:center;">
+                                    <?php echo htmlspecialchars($activationCode); ?>
+                                </div>
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="form-actions">
-                        <label class="remember-me">
-                            <input type="checkbox" checked>
-                            Ingat saya
-                        </label>
-                        <a href="#" class="forgot-password">Lupa sandi?</a>
-                    </div>
+                        <div class="form-group">
+                            <label>Captcha</label>
+                            <div class="captcha-container">
+                                <div class="captcha-box" style="display:flex; align-items:center; justify-content:center; background:#fff;">
+                                    <?php echo $captchaSvg; ?>
+                                </div>
+                            </div>
+                        </div>
 
-                    <button type="submit" class="btn-login" id="btnLogin">
-                        <i class="fa-solid fa-right-to-bracket"></i> Masuk ke Portal
+                        <div class="form-group">
+                            <label for="captcha_answer">Jawaban Captcha</label>
+                            <div class="input-icon">
+                                <i class="fa-solid fa-key icon-left"></i>
+                                <input type="text" id="captcha_answer" name="captcha_answer" placeholder="Masukkan jawaban captcha" required>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                    <button type="submit" class="btn-login" id="submitButton">
+                        <i class="fa-solid fa-right-to-bracket"></i>
+                        <?php echo ($sessionId && $activationCode && $captchaId) ? 'Verifikasi & Masuk' : 'Request Authentication'; ?>
                     </button>
                 </form>
 
@@ -154,19 +141,9 @@ if (!empty($_SESSION['sso_token'])) {
                 </div>
             </div>
         </div>
-
     </div>
 
     <script>
-        // ---- Generate Captcha ----
-        function generateCaptcha() {
-            const el = document.getElementById('captchaDisplay');
-            const code = String(Math.floor(100000 + Math.random() * 900000));
-            el.textContent = code;
-            el.dataset.code = code;
-        }
-
-        // ---- Toggle Password Visibility ----
         function togglePassword() {
             const password = document.getElementById('password');
             const icon = document.getElementById('togglePassword');
@@ -180,19 +157,6 @@ if (!empty($_SESSION['sso_token'])) {
                 icon.classList.add('fa-eye');
             }
         }
-
-        // ---- Client-side captcha validation ----
-        document.getElementById('loginForm').addEventListener('submit', function (e) {
-            const token = document.getElementById('token').value.trim();
-            const captcha = document.getElementById('captchaDisplay').dataset.code ||
-                           document.getElementById('captchaDisplay').textContent.trim();
-            if (token !== captcha) {
-                e.preventDefault();
-                alert('Kode keamanan (captcha) tidak sesuai. Silakan coba lagi.');
-                generateCaptcha();
-                document.getElementById('token').value = '';
-            }
-        });
     </script>
 </body>
 </html>
