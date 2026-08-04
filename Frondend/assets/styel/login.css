@@ -8,13 +8,17 @@
 
 body, html {
     height: 100%;
+    margin: 0;
+    padding: 0;
     background-color: #f8fafc;
+    overflow: hidden; /* Mencegah halaman utama memunculkan scroll ganda yang bikin terpotong */
 }
 
 .container {
     display: flex;
-    height: 100vh;
-    width: 100%;
+    height: 100vh; /* Memastikan tinggi kontainer penuh 100% layar */
+    width: 100vw;
+    overflow: hidden;
 }
 
 /* ============================
@@ -27,24 +31,25 @@ body, html {
     background-size: cover;
     background-position: center;
     color: white;
-    overflow: hidden;
+    height: 100%; /* Memastikan panel kiri mengisi penuh tinggi */
 }
 
 /* Layer hijau tosca / teal yang menimpa gambar */
 .overlay {
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(22, 163, 132, 0.834); /* Warna hijau dengan transparansi 90% */
+    background: rgba(22, 163, 132, 0.834);
     z-index: 1;
 }
 
 .content-wrapper {
     position: relative;
     z-index: 2;
-    padding: 50px 60px;
+    padding: 40px 50px; /* Sedikit disesuaikan agar ruang lebih pas */
     display: flex;
     flex-direction: column;
     height: 100%;
+    justify-content: space-between; /* Membuat jarak elemen terdistribusi rapi dari atas ke bawah */
 }
 
 .brand {
@@ -97,7 +102,7 @@ body, html {
     grid-template-columns: 1fr 1fr;
     gap: 15px;
     max-width: 500px;
-    margin-bottom: auto; /* Mendorong footer ke bawah */
+    margin-bottom: auto;
 }
 
 .feature-card {
@@ -218,6 +223,55 @@ body, html {
     background-color: #ffffff;
 }
 
+/* ============================
+   STYLING TOKEN / CAPTCHA (FIX KOTAK & ANGKA)
+   ============================ */
+.captcha-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+#captchaCanvas {
+    flex: 1;
+    border: 2px solid #cbd5e1 !important; /* Membuat garis tepi kotak lebih jelas dan tegas */
+    border-radius: 8px !important;
+    cursor: pointer;
+    background-color: #f1f5f9 !important; /* Warna latar belakang kotak */
+    height: 46px;
+    width: 100%;
+    display: block;
+}
+
+#captchaCanvas:hover {
+    border-color: #16a385 !important;
+}
+
+.btn-refresh {
+    background-color: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 50%; /* Tombol bulat sempurna */
+    width: 46px;
+    height: 46px;
+    min-width: 46px; /* Mencegah tombol gepeng */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #475569;
+    transition: all 0.3s ease;
+}
+
+.btn-refresh:hover {
+    background-color: #16a385;
+    color: white;
+    border-color: #16a385;
+    transform: rotate(90deg);
+}
+
+/* ============================
+   FORM ACTIONS & TOMBOL LOGIN
+   ============================ */
 .form-actions {
     display: flex;
     justify-content: space-between;
@@ -298,5 +352,5 @@ body, html {
 }
 
 .support-info strong {
-    color: #4755 Siap, 
+    color: #475569;
 }

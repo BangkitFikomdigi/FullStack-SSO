@@ -89,6 +89,16 @@
                           
                         </div>
                     </div>
+                    
+                    <!-- BAGIAN TOKEN / CAPTCHA -->
+                    <div class="form-group">
+                        <label for="token">Kode Token / Captcha</label>
+                        <div class="captcha-container">
+                            <div class="captcha-box" id="captchaDisplay">487291</div>
+                            <button type="button" class="btn-refresh" onclick="generateCaptcha()" title="Ganti Token">
+                                <i class="fa-solid fa-rotate-right"></i>
+                            </button>
+                        </div>
 
                     <!-- TAMBAHAN INPUT TOKEN DI SINI -->
                     <div class="form-group">
