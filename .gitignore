@@ -1,0 +1,19 @@
+# ======= BACKEND (Node.js) - WAJIB! =======
+Backend/node_modules/
+Backend/.env
+Backend/private.pem
+Backend/database.sqlite
+Backend/*.log
+Backend/package-lock.json
+Backend/test.php
+
+# ======= FRONTEND (PHP) =======
+Frontend/vendor/
+Frontend/composer.lock
+
+# ======= SISTEM / IDE =======
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
