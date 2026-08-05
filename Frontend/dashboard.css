@@ -1,6 +1,6 @@
 /* ==========================================================================
    COMPANY DASHBOARD - SSO Portal
-   Stylesheet for dashboard.php
+   Stylesheet for dashboard.php (Centered & Background Image Version)
    ========================================================================== */
 
 * {
@@ -12,7 +12,11 @@
 
 html, body {
     height: 100%;
-    background-color: #ffffff;
+    /* Menggunakan gambar rumah sakit sebagai background penuh */
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
 }
 
 /* ---------- Top navbar ---------- */
@@ -24,6 +28,10 @@ html, body {
     padding: 0 28px;
     background-color: #16a385;
     color: #ffffff;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+    position: sticky;
+    top: 0;
+    z-index: 100;
 }
 
 .topbar-title {
@@ -66,10 +74,11 @@ html, body {
     cursor: pointer;
     padding: 10px 14px;
     border-radius: 6px;
+    transition: background-color 0.2s ease;
 }
 
 .user-menu-btn:hover {
-    background-color: rgba(255, 255, 255, 0.12);
+    background-color: rgba(255, 255, 255, 0.15);
 }
 
 .user-avatar {
@@ -96,6 +105,13 @@ html, body {
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
     overflow: hidden;
     z-index: 20;
+    transform-origin: top right;
+    animation: fadeInDown 0.2s ease-out;
+}
+
+@keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .user-dropdown.open {
@@ -125,6 +141,7 @@ html, body {
     display: flex;
     align-items: center;
     gap: 8px;
+    transition: background-color 0.2s ease;
 }
 
 .user-dropdown button:hover {
@@ -134,98 +151,133 @@ html, body {
 /* ---------- Content ---------- */
 .content {
     max-width: 1100px;
-    margin: 0 auto;
-    padding: 36px 28px 60px;
+    margin: 36px auto;
+    padding: 36px 40px 60px;
+    /* Efek Glassmorphism agar background gambar tetap terlihat estetik */
+    background-color: rgba(255, 255, 255, 0.90);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 .content-header {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 16px;
-    padding-bottom: 18px;
+    padding-bottom: 24px;
     border-bottom: 1px solid #e3e8ec;
-    margin-bottom: 36px;
+    margin-bottom: 40px;
 }
 
 .content-header h1 {
     font-size: 28px;
-    font-weight: 500;
-    color: #4b5763;
+    font-weight: 600;
+    color: #334155;
 }
 
+/* ---------- Search Box ---------- */
 .search-box {
     position: relative;
-    width: 260px;
+    width: 280px;
 }
 
 .search-box i {
     position: absolute;
-    left: 4px;
+    left: 14px;
     top: 50%;
     transform: translateY(-50%);
-    color: #9aa5ae;
+    color: #94a3b8;
     font-size: 14px;
+    transition: color 0.3s ease;
 }
 
 .search-box input {
     width: 100%;
-    border: none;
-    border-bottom: 1px solid #d7dde2;
-    padding: 6px 6px 6px 26px;
-    font-size: 15px;
-    color: #4b5763;
+    border: 2px solid transparent;
+    border-radius: 30px; 
+    background-color: #f1f5f9;
+    padding: 10px 16px 10px 36px;
+    font-size: 14px;
+    color: #334155;
     outline: none;
-    background: transparent;
+    transition: all 0.3s ease;
+}
+
+.search-box input::placeholder {
+    color: #94a3b8;
 }
 
 .search-box input:focus {
-    border-bottom-color: #16a385;
+    background-color: #ffffff;
+    border-color: #16a385;
+    box-shadow: 0 0 0 4px rgba(22, 163, 133, 0.15);
 }
 
-/* ---------- App grid ---------- */
+.search-box input:focus + i, 
+.search-box input:focus ~ i {
+    color: #16a385;
+}
+
+/* ---------- App grid (Gaya Card Modern) ---------- */
 .apps-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(110px, 110px));
-    gap: 34px 40px;
+    /* Membuat persis 2 kolom ke samping */
+    grid-template-columns: repeat(2, 1fr); 
+    gap: 20px;
+    width: 100%;
 }
 
-.app-tile {
+.app-card {
+    /* Background hijau kebiruan transparan mirip di image_4fe169.jpg */
+    background: rgba(22, 163, 133, 0.65); 
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 16px;
+    padding: 24px;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    text-align: center;
+    align-items: flex-start; /* Menyusun konten ke rata kiri */
     text-decoration: none;
-    color: #4b5763;
-}
-
-.app-icon {
-    width: 96px;
-    height: 96px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     color: #ffffff;
-    font-size: 38px;
-    margin-bottom: 10px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    transition: all 0.3s ease;
 }
 
-.app-tile:hover .app-icon {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.18);
+.app-card:hover {
+    background: rgba(22, 163, 133, 0.85); /* Warna menguat saat di-hover */
+    transform: translateY(-4px);
+    border-color: rgba(255, 255, 255, 0.6);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
 }
 
-.app-tile span {
+.card-icon {
+    font-size: 24px;
+    margin-bottom: 16px;
+    color: #ffffff;
+    opacity: 0.9;
+}
+
+.card-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+}
+
+.card-desc {
     font-size: 14px;
-    line-height: 1.3;
+    font-weight: 400;
+    line-height: 1.5;
+    opacity: 0.85; /* Teks deskripsi dibuat sedikit lebih redup dari judul */
 }
 
-.empty-state {
-    color: #8a95a0;
-    font-size: 15px;
-    padding: 20px 0;
+/* Responsif jika diakses lewat layar kecil/tablet, otomatis jadi 1 kolom */
+@media (max-width: 768px) {
+    .apps-grid {
+        grid-template-columns: 1fr;
+    }
 }
