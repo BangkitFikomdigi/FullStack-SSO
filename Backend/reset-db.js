@@ -1,52 +1,25 @@
-const fs = require('fs');
-const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
+require('dotenv').config();
 
-const dbPath = path.join(__dirname, 'database.sqlite');
-if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+});
 
-const db = new sqlite3.Database(dbPath);
+async function reset() {
+// Hapus tabel berurutan (memperhatikan foreign key).
+  await pool.query('DROP TABLE IF EXISTS login_activities');
+  await pool.query('DROP TABLE IF EXISTS sessions');
+  await pool.query('DROP TABLE IF EXISTS user_modules');
+  await pool.query('DROP TABLE IF EXISTS modules');
+  await pool.query('DROP TABLE IF EXISTS users');
 
-db.serialize(() => {
-  db.run(`CREATE TABLE users (
-    id TEXT PRIMARY KEY,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-  )`);
+  console.log('Database PostgreSQL di-reset (semua tabel dihapus).');
+  console.log('Jalankan server untuk membuat ulang schema & seed data.');
+  await pool.end();
+}
 
-  db.run(`CREATE TABLE modules (
-    id TEXT PRIMARY KEY,
-    code TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    url TEXT NOT NULL
-  )`);
-
-  db.run(`CREATE TABLE user_modules (
-    user_id TEXT,
-    module_id TEXT,
-    PRIMARY KEY (user_id, module_id),
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (module_id) REFERENCES modules(id)
-  )`);
-
-  db.run(`CREATE TABLE sessions (
-    id TEXT PRIMARY KEY,
-    user_id TEXT,
-    status TEXT NOT NULL DEFAULT 'pending',
-    activation_code TEXT,
-    activation_attempts INTEGER DEFAULT 0,
-    captcha_id TEXT,
-    captcha_answer TEXT,
-    refresh_token TEXT,
-    refresh_expires_at TEXT,
-    expires_at TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-  )`);
-
-  db.close(() => {
-    console.log('Database reset OK:', dbPath);
-  });
+reset().catch((err) => {
+  console.error('Gagal reset database:', err.message);
+  process.exit(1);
 });

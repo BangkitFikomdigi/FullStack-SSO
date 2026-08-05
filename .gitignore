@@ -1,2 +1,6 @@
 # ======= BACKEND (Node.js) - WAJIB! =======
 Backend/private.pem
+Backend/public.pem
+Backend/.env
+Backend/database.sqlite
+Backend/node_modules/

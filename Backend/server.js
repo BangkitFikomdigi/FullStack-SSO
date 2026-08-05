@@ -3,17 +3,17 @@ const cors = require('cors');
 const bcrypt = require('bcrypt');
 const svgCaptcha = require('svg-captcha');
 const crypto = require('crypto');
-const sqlite3 = require('sqlite3').verbose();
-const fs = require('fs');
-const path = require('path');
+const { Pool } = require('pg');
 require('dotenv').config();
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
-const DB_PATH = path.join(__dirname, 'database.sqlite');
-let db = new sqlite3.Database(DB_PATH);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+});
 
 // Captcha halaman login: dibuat lepas dari sesi login (belum tahu username/password),
 // supaya bisa ditampilkan di satu halaman yang sama bersama form username & password.
@@ -31,53 +31,24 @@ function cleanupLoginCaptchas() {
 }
 setInterval(cleanupLoginCaptchas, 60 * 1000).unref();
 
-function recreateDatabaseFile() {
-  return new Promise((resolve, reject) => {
-    db.close((closeErr) => {
-      if (closeErr) {
-        console.warn('Close warning:', closeErr.message);
-      }
-
-      if (fs.existsSync(DB_PATH)) {
-        fs.unlinkSync(DB_PATH);
-      }
-
-      db = new sqlite3.Database(DB_PATH);
-      resolve();
-    });
-  });
-}
-
 const SESSION_PENDING_MINUTES = parseInt(process.env.SESSION_PENDING_MINUTES) || 5;
 const SESSION_ACTIVE_MINUTES = parseInt(process.env.SESSION_ACTIVE_MINUTES) || 15;
 const REFRESH_TOKEN_DAYS = parseInt(process.env.REFRESH_TOKEN_DAYS) || 7;
 const MAX_ACTIVATION_ATTEMPTS = 5;
 
 function run(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) return reject(err);
-      resolve({ lastID: this.lastID, changes: this.changes });
-    });
-  });
+  return pool.query(sql, params).then((result) => ({
+    lastID: null,
+    changes: result.rowCount ?? 0
+  }));
 }
 
 function get(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) return reject(err);
-      resolve(row);
-    });
-  });
+  return pool.query(sql, params).then((result) => result.rows[0] || null);
 }
 
 function all(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) return reject(err);
-      resolve(rows);
-    });
-  });
+  return pool.query(sql, params).then((result) => result.rows);
 }
 
 function generateActivationCode() {
@@ -111,53 +82,87 @@ function toMinutes(ms) {
   return total > 0 ? total : 0;
 }
 
+// Mencatat aktivitas login (sukses/gagal) untuk maintenance admin.
+async function logLoginActivity({ user_id = null, username = null, status, reason = null, req = null }) {
+  try {
+    const ipAddress = (req && req.ip) ? String(req.ip) : null;
+    const userAgent = (req && req.headers && req.headers['user-agent']) ? String(req.headers['user-agent']).slice(0, 500) : null;
+
+    await run(
+      `INSERT INTO login_activities (user_id, username, status, reason, ip_address, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [user_id, username, status, reason, ipAddress, userAgent]
+    );
+  } catch (error) {
+    console.error('[logLoginActivity] Gagal mencatat aktivitas:', error.message);
+  }
+}
+
 async function initDatabase() {
   const initializeSchema = async () => {
     await run(`
       CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        username VARCHAR UNIQUE NOT NULL,
+        password_hash VARCHAR NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
 
     await run(`
       CREATE TABLE IF NOT EXISTS modules (
-        id TEXT PRIMARY KEY,
-        code TEXT UNIQUE NOT NULL,
-        name TEXT NOT NULL,
-        url TEXT NOT NULL
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        code VARCHAR UNIQUE NOT NULL,
+        name VARCHAR NOT NULL,
+        url VARCHAR NOT NULL
       )
     `);
 
     await run(`
       CREATE TABLE IF NOT EXISTS user_modules (
-        user_id TEXT,
-        module_id TEXT,
+        user_id UUID NOT NULL,
+        module_id UUID NOT NULL,
         PRIMARY KEY (user_id, module_id),
-        FOREIGN KEY (user_id) REFERENCES users(id),
+FOREIGN KEY (user_id) REFERENCES users(id),
         FOREIGN KEY (module_id) REFERENCES modules(id)
       )
     `);
 
     await run(`
       CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        user_id TEXT,
-        status TEXT NOT NULL DEFAULT 'pending',
-        activation_code TEXT,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID,
+        status VARCHAR NOT NULL DEFAULT 'pending',
+        activation_code VARCHAR,
         activation_attempts INTEGER DEFAULT 0,
-        captcha_id TEXT,
-        captcha_answer TEXT,
-        refresh_token TEXT,
-        refresh_expires_at TEXT,
-        expires_at TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        captcha_id UUID,
+        captcha_answer VARCHAR,
+        refresh_token VARCHAR,
+        refresh_expires_at TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
         FOREIGN KEY (user_id) REFERENCES users(id)
       )
     `);
+
+    await run(`
+      CREATE TABLE IF NOT EXISTS login_activities (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID,
+        username VARCHAR,
+        status VARCHAR NOT NULL,
+        reason VARCHAR,
+        ip_address VARCHAR,
+        user_agent VARCHAR,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      )
+    `);
+
+    // Indeks untuk mempercepat pencarian riwayat by username & waktu.
+    await run(`CREATE INDEX IF NOT EXISTS idx_login_activities_username ON login_activities (username)`);
+    await run(`CREATE INDEX IF NOT EXISTS idx_login_activities_created_at ON login_activities (created_at)`);
 
     const modules = [
       { code: 'SIMRS', name: 'SIMRS', url: 'https://rs-amino.jatengprov.go.id/login/' },
@@ -168,7 +173,8 @@ async function initDatabase() {
 
     for (const m of modules) {
       await run(
-        `INSERT OR IGNORE INTO modules (id, code, name, url) VALUES (?, ?, ?, ?)`,
+        `INSERT INTO modules (id, code, name, url) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (code) DO NOTHING`,
         [crypto.randomUUID(), m.code, m.name, m.url]
       );
     }
@@ -182,35 +188,24 @@ async function initDatabase() {
     ];
 
     for (const user of defaultUsers) {
-      const existing = await get('SELECT id FROM users WHERE username = ?', [user.username]);
+      const existing = await get('SELECT id FROM users WHERE username = $1', [user.username]);
       if (!existing) {
         const passwordHash = await bcrypt.hash(user.password, 10);
         const userId = crypto.randomUUID();
-        await run('INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)', [userId, user.username, passwordHash]);
+        await run('INSERT INTO users (id, username, password_hash) VALUES ($1, $2, $3)', [userId, user.username, passwordHash]);
 
         for (const code of user.modules) {
-          const module = await get('SELECT id FROM modules WHERE code = ?', [code]);
+          const module = await get('SELECT id FROM modules WHERE code = $1', [code]);
           if (module) {
-            await run('INSERT OR IGNORE INTO user_modules (user_id, module_id) VALUES (?, ?)', [userId, module.id]);
+            await run('INSERT INTO user_modules (user_id, module_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [userId, module.id]);
           }
         }
       }
     }
   };
 
-  try {
-    await initializeSchema();
-    console.log('✅ Database SQLite siap & ter-seed.');
-  } catch (error) {
-    if (error && /mismatch|datatype/i.test(String(error.message))) {
-      console.warn('⚠️ Deteksi schema lama. Menghapus database lama dan membuat ulang...');
-      await recreateDatabaseFile();
-      await initializeSchema();
-      console.log('✅ Database SQLite baru dibuat & ter-seed.');
-    } else {
-      throw error;
-    }
-  }
+  await initializeSchema();
+  console.log('✅ Database PostgreSQL siap & ter-seed.');
 }
 
 async function getUserModules(userId) {
@@ -218,7 +213,7 @@ async function getUserModules(userId) {
     `SELECT m.code, m.name, m.url
      FROM user_modules um
      JOIN modules m ON m.id = um.module_id
-     WHERE um.user_id = ?
+     WHERE um.user_id = $1
      ORDER BY m.code`,
     [userId]
   );
@@ -262,22 +257,26 @@ app.post('/auth/login', async (req, res) => {
     const captchaEntry = loginCaptchaStore.get(captcha_id);
     loginCaptchaStore.delete(captcha_id); // one-time use, baik cocok maupun tidak
 
-    if (!captchaEntry || captchaEntry.expiresAt <= Date.now()) {
+if (!captchaEntry || captchaEntry.expiresAt <= Date.now()) {
+      await logLoginActivity({ username, status: 'failed', reason: 'captcha_expired', req });
       return res.status(400).json({ success: false, message: 'Captcha kadaluarsa. Silakan muat ulang captcha.' });
     }
 
     if (String(captcha_answer).toLowerCase() !== String(captchaEntry.answer).toLowerCase()) {
+      await logLoginActivity({ username, status: 'failed', reason: 'captcha_failed', req });
       return res.status(400).json({ success: false, message: 'Username, password, atau captcha tidak valid' });
     }
 
     // 2. Baru cek username/password.
-    const user = await get('SELECT * FROM users WHERE username = ?', [username]);
+    const user = await get('SELECT * FROM users WHERE username = $1', [username]);
     if (!user) {
+      await logLoginActivity({ username, status: 'failed', reason: 'user_not_found', req });
       return res.status(401).json({ success: false, message: 'Username, password, atau captcha tidak valid' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
+      await logLoginActivity({ user_id: user.id, username, status: 'failed', reason: 'wrong_password', req });
       return res.status(401).json({ success: false, message: 'Username, password, atau captcha tidak valid' });
     }
 
@@ -290,11 +289,13 @@ app.post('/auth/login', async (req, res) => {
 
     await run(
       `INSERT INTO sessions (id, user_id, status, refresh_token, refresh_expires_at, expires_at)
-       VALUES (?, ?, 'active', ?, ?, ?)`,
+       VALUES ($1, $2, 'active', $3, $4, $5)`,
       [sessionId, user.id, refreshToken, refreshExpiresAt, activeExpiresAt]
     );
 
-    const modulAkses = await getUserModules(user.id);
+const modulAkses = await getUserModules(user.id);
+
+    await logLoginActivity({ user_id: user.id, username: user.username, status: 'success', req });
 
     return res.status(201).json({
       success: true,
@@ -322,7 +323,7 @@ app.post('/auth/activate', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Semua field wajib diisi' });
     }
 
-    const session = await get('SELECT * FROM sessions WHERE id = ?', [session_id]);
+    const session = await get('SELECT * FROM sessions WHERE id = $1', [session_id]);
     if (!session) {
       return res.status(404).json({ success: false, message: 'Session tidak ditemukan' });
     }
@@ -332,12 +333,12 @@ app.post('/auth/activate', async (req, res) => {
     }
 
     if (new Date() > new Date(session.expires_at)) {
-      await run('UPDATE sessions SET status = ? WHERE id = ?', ['expired', session.id]);
+      await run('UPDATE sessions SET status = $1 WHERE id = $2', ['expired', session.id]);
       return res.status(401).json({ success: false, message: 'Session kadaluarsa. Silakan login ulang.' });
     }
 
     if (session.activation_attempts >= MAX_ACTIVATION_ATTEMPTS) {
-      await run('UPDATE sessions SET status = ? WHERE id = ?', ['expired', session.id]);
+      await run('UPDATE sessions SET status = $1 WHERE id = $2', ['expired', session.id]);
       return res.status(429).json({ success: false, message: 'Terlalu banyak percobaan. Session dikunci.' });
     }
 
@@ -346,7 +347,7 @@ app.post('/auth/activate', async (req, res) => {
 
     if (!captchaMatch || !codeMatch) {
       const newAttempts = Number(session.activation_attempts || 0) + 1;
-      await run('UPDATE sessions SET activation_attempts = ? WHERE id = ?', [newAttempts, session.id]);
+      await run('UPDATE sessions SET activation_attempts = $1 WHERE id = $2', [newAttempts, session.id]);
       return res.status(400).json({
         success: false,
         message: 'Kode aktivasi atau captcha tidak sesuai.',
@@ -365,15 +366,15 @@ app.post('/auth/activate', async (req, res) => {
            activation_code = NULL,
            captcha_id = NULL,
            captcha_answer = NULL,
-           refresh_token = ?,
-           refresh_expires_at = ?,
-           expires_at = ?,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
+           refresh_token = $1,
+           refresh_expires_at = $2,
+           expires_at = $3,
+           updated_at = NOW()
+       WHERE id = $4`,
       [refreshToken, refreshExpiresAt, activeExpiresAt, session.id]
     );
 
-    const user = await get('SELECT * FROM users WHERE id = ?', [session.user_id]);
+    const user = await get('SELECT * FROM users WHERE id = $1', [session.user_id]);
     const modulAkses = await getUserModules(user.id);
 
     return res.json({
@@ -402,17 +403,17 @@ app.post('/auth/session', async (req, res) => {
       return res.status(400).json({ success: false, message: 'session_id wajib diisi' });
     }
 
-    const session = await get('SELECT * FROM sessions WHERE id = ?', [session_id]);
+    const session = await get('SELECT * FROM sessions WHERE id = $1', [session_id]);
     if (!session) {
       return res.status(404).json({ success: false, message: 'Session tidak ditemukan' });
     }
 
     if (session.status === 'active' && new Date() > new Date(session.expires_at)) {
-      await run('UPDATE sessions SET status = ? WHERE id = ?', ['expired', session.id]);
+      await run('UPDATE sessions SET status = $1 WHERE id = $2', ['expired', session.id]);
       session.status = 'expired';
     }
 
-    const user = await get('SELECT * FROM users WHERE id = ?', [session.user_id]);
+    const user = await get('SELECT * FROM users WHERE id = $1', [session.user_id]);
     const modulAkses = await getUserModules(user.id);
 
     return res.json({
@@ -448,17 +449,17 @@ app.post('/auth/validate', async (req, res) => {
       return res.status(401).json({ success: false, valid: false, message: 'Token tidak ditemukan' });
     }
 
-    const session = await get('SELECT * FROM sessions WHERE refresh_token = ? AND status = ?', [token, 'active']);
+    const session = await get('SELECT * FROM sessions WHERE refresh_token = $1 AND status = $2', [token, 'active']);
     if (!session) {
       return res.status(401).json({ success: false, valid: false, message: 'Token tidak valid atau session tidak aktif' });
     }
 
     if (new Date() > new Date(session.expires_at)) {
-      await run('UPDATE sessions SET status = ? WHERE id = ?', ['expired', session.id]);
+      await run('UPDATE sessions SET status = $1 WHERE id = $2', ['expired', session.id]);
       return res.status(401).json({ success: false, valid: false, message: 'Session expired' });
     }
 
-    const user = await get('SELECT * FROM users WHERE id = ?', [session.user_id]);
+    const user = await get('SELECT * FROM users WHERE id = $1', [session.user_id]);
     const modulAkses = await getUserModules(user.id);
 
     return res.json({
@@ -486,20 +487,20 @@ app.post('/auth/refresh', async (req, res) => {
       return res.status(400).json({ success: false, message: 'refresh_token wajib diisi' });
     }
 
-    const session = await get('SELECT * FROM sessions WHERE refresh_token = ?', [refresh_token]);
+    const session = await get('SELECT * FROM sessions WHERE refresh_token = $1', [refresh_token]);
     if (!session) {
       return res.status(401).json({ success: false, message: 'Refresh token tidak valid' });
     }
 
     if (new Date() > new Date(session.refresh_expires_at)) {
-      await run('UPDATE sessions SET status = ? WHERE id = ?', ['expired', session.id]);
+      await run('UPDATE sessions SET status = $1 WHERE id = $2', ['expired', session.id]);
       return res.status(401).json({ success: false, message: 'Refresh token kadaluarsa. Silakan login ulang.' });
     }
 
     const newActiveExpiresAt = new Date(Date.now() + SESSION_ACTIVE_MINUTES * 60 * 1000).toISOString();
-    await run('UPDATE sessions SET status = ?, expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', ['active', newActiveExpiresAt, session.id]);
+    await run('UPDATE sessions SET status = $1, expires_at = $2, updated_at = NOW() WHERE id = $3', ['active', newActiveExpiresAt, session.id]);
 
-    const user = await get('SELECT * FROM users WHERE id = ?', [session.user_id]);
+    const user = await get('SELECT * FROM users WHERE id = $1', [session.user_id]);
     const modulAkses = await getUserModules(user.id);
 
     return res.json({
@@ -528,7 +529,7 @@ app.delete('/auth/logout', async (req, res) => {
       return res.status(400).json({ success: false, message: 'session_id wajib diisi' });
     }
 
-    const result = await run('UPDATE sessions SET status = ?, refresh_token = NULL WHERE id = ?', ['expired', session_id]);
+    const result = await run('UPDATE sessions SET status = $1, refresh_token = NULL WHERE id = $2', ['expired', session_id]);
     if (result.changes === 0) {
       return res.status(404).json({ success: false, message: 'Session tidak ditemukan' });
     }
@@ -536,6 +537,54 @@ app.delete('/auth/logout', async (req, res) => {
     return res.json({ success: true, message: 'Logout berhasil. Session dan token dinonaktifkan.' });
   } catch (error) {
     console.error('[/auth/logout] Error:', error);
+    return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server' });
+  }
+});
+
+// Endpoint admin untuk melihat riwayat activity login (maintenance).
+// Query param opsional: ?limit=50 & ?username=admin_simrs & ?status=success
+app.get('/admin/login-activities', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 500);
+    const username = req.query.username ? String(req.query.username) : null;
+    const status = req.query.status ? String(req.query.status) : null;
+
+    const conditions = [];
+    const params = [];
+
+    if (username) {
+      params.push(username);
+      conditions.push(`username = $${params.length}`);
+    }
+    if (status) {
+      params.push(status);
+      conditions.push(`status = $${params.length}`);
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    params.push(limit);
+
+    const rows = await all(
+      `SELECT id, user_id, username, status, reason, ip_address, user_agent, created_at
+       FROM login_activities
+       ${whereClause}
+       ORDER BY created_at DESC
+       LIMIT $${params.length}`,
+      params
+    );
+
+    const total = await get('SELECT COUNT(*)::int AS count FROM login_activities');
+
+    return res.json({
+      success: true,
+      data: {
+        total: total ? total.count : 0,
+        limit,
+        activities: rows
+      }
+    });
+  } catch (error) {
+    console.error('[/admin/login-activities] Error:', error);
     return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada server' });
   }
 });
@@ -561,4 +610,3 @@ initDatabase()
     console.error('❌ Gagal inisialisasi database:', err.message);
     process.exit(1);
   });
-
