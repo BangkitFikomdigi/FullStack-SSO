@@ -599,7 +599,7 @@ initDatabase()
       console.log('   GET    /health');
       console.log('   GET    /auth/captcha');
       console.log('   POST   /auth/login');
-      console.log('   POST   /auth/activate  (legacy, tidak dipakai alur login 1-halaman)');
+      console.log('   POST   /auth/activate');
       console.log('   POST   /auth/session');
       console.log('   POST   /auth/validate');
       console.log('   POST   /auth/refresh');
