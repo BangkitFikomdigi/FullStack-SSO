@@ -1,15 +1,13 @@
 <?php
 session_start();
 
+// Jika sudah ada token SSO, langsung arahkan ke dashboard
 if (!empty($_SESSION['sso_token'])) {
     header('Location: dashboard.php');
     exit;
 }
 
-$sessionId = $_SESSION['sso_pending_session'] ?? '';
-$activationCode = $_SESSION['sso_activation_code'] ?? '';
-$captchaId = $_SESSION['sso_captcha_id'] ?? '';
-$captchaSvg = $_SESSION['sso_captcha_svg'] ?? '';
+// Mengambil username jika sebelumnya sudah pernah diinput/gagal login
 $username = $_SESSION['sso_login_username'] ?? '';
 ?>
 <!DOCTYPE html>
@@ -25,6 +23,7 @@ $username = $_SESSION['sso_login_username'] ?? '';
 </head>
 <body>
     <div class="container">
+        <!-- BAGIAN KIRI -->
         <div class="left-panel">
             <div class="overlay"></div>
             <div class="content-wrapper">
@@ -54,80 +53,68 @@ $username = $_SESSION['sso_login_username'] ?? '';
             </div>
         </div>
 
+        <!-- BAGIAN KANAN -->
         <div class="right-panel">
             <div class="login-wrapper">
                 <div class="login-header">
-                    <div class="login-icon"><i class="fa-solid fa-lock"></i></div>
+                    <div class="login-icon"><i class="fa-solid fa-lock" style="font-size: 24px; color: #16a385; margin-bottom: 15px;"></i></div>
                     <h2>Selamat datang</h2>
                     <p>Masuk dengan akun pegawai untuk melanjutkan ke portal aplikasi.</p>
                 </div>
 
+                <!-- Notifikasi Error/Info -->
                 <?php if (!empty($_GET['error'])): ?>
-                    <div class="alert alert-error"><i class="fa-solid fa-circle-exclamation"></i> Username, password, captcha, atau kode aktivasi tidak valid.</div>
+                    <div class="alert alert-error" style="color: #dc2626; background: #fef2f2; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 13px;">
+                        <i class="fa-solid fa-circle-exclamation"></i> Username, password, atau captcha tidak valid.
+                    </div>
                 <?php elseif (!empty($_GET['expired'])): ?>
-                    <div class="alert alert-info"><i class="fa-solid fa-clock"></i> Sesi Anda telah berakhir. Silakan login kembali.</div>
+                    <div class="alert alert-info" style="color: #0284c7; background: #f0f9ff; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 13px;">
+                        <i class="fa-solid fa-clock"></i> Sesi Anda telah berakhir. Silakan login kembali.
+                    </div>
                 <?php elseif (!empty($_GET['logout'])): ?>
-                    <div class="alert alert-info"><i class="fa-solid fa-right-from-bracket"></i> Anda telah keluar dari sesi SSO.</div>
+                    <div class="alert alert-info" style="color: #0284c7; background: #f0f9ff; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 13px;">
+                        <i class="fa-solid fa-right-from-bracket"></i> Anda telah keluar dari sesi SSO.
+                    </div>
                 <?php endif; ?>
 
-                <form action="auth.php" method="POST" class="login-form">
-                    <?php if ($sessionId && $activationCode && $captchaId): ?>
-                        <input type="hidden" name="action" value="activate">
-                        <input type="hidden" name="session_id" value="<?php echo htmlspecialchars($sessionId); ?>">
-                        <input type="hidden" name="captcha_id" value="<?php echo htmlspecialchars($captchaId); ?>">
-                        <input type="hidden" name="activation_code" value="<?php echo htmlspecialchars($activationCode); ?>">
-                    <?php else: ?>
-                        <input type="hidden" name="action" value="login">
-                    <?php endif; ?>
+                <!-- FORM LOGIN TERGABUNG -->
+                <form action="auth.php" method="POST" class="login-form" id="loginForm">
+                    <input type="hidden" name="action" value="login">
 
-                    <?php if (!($sessionId && $activationCode && $captchaId)): ?>
-                        <div class="form-group">
-                            <label for="username">Username</label>
-                            <div class="input-icon">
-                                <i class="fa-regular fa-user icon-left"></i>
-                                <input type="text" id="username" name="username" value="<?php echo htmlspecialchars($username); ?>" placeholder="Masukkan username" required autofocus>
-                            </div>
+                    <div class="form-group">
+                        <label for="username">Username / NIP</label>
+                        <div class="input-icon">
+                            <i class="fa-regular fa-user icon-left"></i>
+                            <input type="text" id="username" name="username" value="<?php echo htmlspecialchars($username); ?>" placeholder="Masukkan username" required autofocus>
                         </div>
+                    </div>
 
-                        <div class="form-group">
-                            <label for="password">Kata sandi</label>
-                            <div class="input-icon">
-                                <i class="fa-solid fa-lock icon-left"></i>
-                                <input type="password" id="password" name="password" placeholder="Masukkan kata sandi" required>
-                                <i class="fa-solid fa-eye icon-right" id="togglePassword" onclick="togglePassword()" title="Tampilkan sandi"></i>
-                            </div>
+                    <div class="form-group">
+                        <label for="password">Kata sandi</label>
+                        <div class="input-icon">
+                            <i class="fa-solid fa-lock icon-left"></i>
+                            <input type="password" id="password" name="password" placeholder="Masukkan kata sandi" required>
+                            <i class="fa-solid fa-eye icon-right" id="togglePassword" onclick="togglePassword()" title="Tampilkan sandi" style="cursor: pointer;"></i>
                         </div>
-                    <?php else: ?>
-                        <div class="form-group">
-                            <label>Kode Aktivasi</label>
-                            <div class="captcha-container">
-                                <div class="captcha-box" style="min-height: 54px; font-size: 2rem; letter-spacing: 0.30rem; text-align:center; display:flex; align-items:center; justify-content:center;">
-                                    <?php echo htmlspecialchars($activationCode); ?>
-                                </div>
-                            </div>
-                        </div>
+                    </div>
 
-                        <div class="form-group">
-                            <label>Captcha</label>
-                            <div class="captcha-container">
-                                <div class="captcha-box" style="display:flex; align-items:center; justify-content:center; background:#fff;">
-                                    <?php echo $captchaSvg; ?>
-                                </div>
-                            </div>
+                    <!-- BAGIAN CAPTCHA DENGAN TOMBOL REFRESH -->
+                    <div class="form-group">
+                        <label for="captcha_answer">Kode Captcha</label>
+                        <div class="captcha-wrapper" style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                            <canvas id="captchaCanvas" width="140" height="46" title="Klik untuk memperbarui token"></canvas>
+                            <button type="button" class="btn-refresh" onclick="generateCaptcha()" title="Ganti Token">
+                                <i class="fa-solid fa-rotate-right"></i>
+                            </button>
                         </div>
-
-                        <div class="form-group">
-                            <label for="captcha_answer">Jawaban Captcha</label>
-                            <div class="input-icon">
-                                <i class="fa-solid fa-key icon-left"></i>
-                                <input type="text" id="captcha_answer" name="captcha_answer" placeholder="Masukkan jawaban captcha" required>
-                            </div>
+                        <div class="input-icon">
+                            <i class="fa-solid fa-shield-keyhole icon-left"></i>
+                            <input type="text" id="captcha_answer" name="captcha_answer" placeholder="Masukkan kode captcha di atas" required>
                         </div>
-                    <?php endif; ?>
+                    </div>
 
-                    <button type="submit" class="btn-login" id="submitButton">
-                        <i class="fa-solid fa-right-to-bracket"></i>
-                        <?php echo ($sessionId && $activationCode && $captchaId) ? 'Verifikasi & Masuk' : 'Request Authentication'; ?>
+                    <button type="submit" class="btn-login" id="submitBtn">
+                        <i class="fa-solid fa-right-to-bracket"></i> Masuk ke Portal
                     </button>
                 </form>
 
@@ -143,7 +130,9 @@ $username = $_SESSION['sso_login_username'] ?? '';
         </div>
     </div>
 
+    <!-- JAVASCRIPT UNTUK INTERAKSI FORM & CAPTCHA -->
     <script>
+        // Fitur Toggle Show/Hide Password
         function togglePassword() {
             const password = document.getElementById('password');
             const icon = document.getElementById('togglePassword');
@@ -157,6 +146,81 @@ $username = $_SESSION['sso_login_username'] ?? '';
                 icon.classList.add('fa-eye');
             }
         }
+
+        // Fitur Generate Canvas Captcha
+        function generateCaptcha() {
+            const canvas = document.getElementById('captchaCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Bersihkan dan set background kotak
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#f1f5f9';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Tambahkan noise (garis acak)
+            for (let i = 0; i < 6; i++) {
+                ctx.strokeStyle = `rgba(22, 163, 132, ${Math.random() * 0.5 + 0.2})`;
+                ctx.beginPath();
+                ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
+                ctx.lineTo(Math.random() * canvas.width, Math.random() * canvas.height);
+                ctx.stroke();
+            }
+
+            // Buat 5 karakter acak untuk Captcha
+            const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            let captchaText = '';
+            for (let i = 0; i < 5; i++) {
+                captchaText += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            
+            // Simpan teks di atribut data untuk validasi form
+            canvas.setAttribute('data-code', captchaText);
+
+            // Tulis teks di tengah Canvas
+            ctx.font = 'bold 22px Inter, sans-serif';
+            ctx.fillStyle = '#0f172a';
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'center';
+            
+            // Efek posisi & rotasi acak pada teks
+            let x = 25;
+            for (let i = 0; i < captchaText.length; i++) {
+                ctx.save();
+                ctx.translate(x, canvas.height / 2);
+                let angle = (Math.random() - 0.5) * 0.4;
+                ctx.rotate(angle);
+                ctx.fillText(captchaText[i], 0, 0);
+                ctx.restore();
+                x += 22;
+            }
+        }
+
+        // Validasi form saat submit
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            const inputCaptcha = document.getElementById('captcha_answer').value.toUpperCase();
+            const actualCaptcha = document.getElementById('captchaCanvas').getAttribute('data-code');
+
+            if (inputCaptcha !== actualCaptcha) {
+                e.preventDefault(); // Hentikan form agar tidak terkirim
+                alert('Kode Captcha yang Anda masukkan salah. Silakan coba lagi!');
+                generateCaptcha(); // Refresh captcha
+                document.getElementById('captcha_answer').value = ''; // Kosongkan input
+                document.getElementById('captcha_answer').focus();
+            } else {
+                // Efek loading tombol jika captcha benar
+                const btn = document.getElementById('submitBtn');
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Memproses...';
+                btn.style.opacity = '0.8';
+                btn.style.pointerEvents = 'none';
+            }
+        });
+
+        // Jalankan captcha saat halaman pertama kali dimuat
+        window.onload = function() {
+            generateCaptcha();
+            // Bisa juga di-refresh dengan mengklik area kotaknya langsung
+            document.getElementById('captchaCanvas').addEventListener('click', generateCaptcha);
+        };
     </script>
 </body>
 </html>
