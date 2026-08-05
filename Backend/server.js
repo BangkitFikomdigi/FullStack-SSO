@@ -15,6 +15,22 @@ app.use(express.json());
 const DB_PATH = path.join(__dirname, 'database.sqlite');
 let db = new sqlite3.Database(DB_PATH);
 
+// Captcha halaman login: dibuat lepas dari sesi login (belum tahu username/password),
+// supaya bisa ditampilkan di satu halaman yang sama bersama form username & password.
+// Disimpan sementara di memori (satu kali pakai, kadaluarsa singkat).
+const LOGIN_CAPTCHA_TTL_MS = 5 * 60 * 1000; // 5 menit
+const loginCaptchaStore = new Map(); // id -> { answer, expiresAt }
+
+function cleanupLoginCaptchas() {
+  const now = Date.now();
+  for (const [id, entry] of loginCaptchaStore.entries()) {
+    if (entry.expiresAt <= now) {
+      loginCaptchaStore.delete(id);
+    }
+  }
+}
+setInterval(cleanupLoginCaptchas, 60 * 1000).unref();
+
 function recreateDatabaseFile() {
   return new Promise((resolve, reject) => {
     db.close((closeErr) => {
@@ -212,44 +228,85 @@ app.get('/health', (req, res) => {
   res.json({ success: true, message: 'SSO backend is running' });
 });
 
+// Captcha berdiri sendiri untuk halaman login (tampil bersama username & password,
+// tidak menunggu password diverifikasi dulu).
+app.get('/auth/captcha', (req, res) => {
+  cleanupLoginCaptchas();
+  const captcha = generateCaptcha();
+  loginCaptchaStore.set(captcha.id, {
+    answer: captcha.answer,
+    expiresAt: Date.now() + LOGIN_CAPTCHA_TTL_MS
+  });
+
+  return res.status(201).json({
+    success: true,
+    data: {
+      captcha: {
+        id: captcha.id,
+        svg: captcha.svg
+      },
+      expires_in: LOGIN_CAPTCHA_TTL_MS / 1000
+    }
+  });
+});
+
 app.post('/auth/login', async (req, res) => {
   try {
-    const { username, password } = req.body || {};
-    if (!username || !password) {
-      return res.status(400).json({ success: false, message: 'Username dan password wajib diisi' });
+    const { username, password, captcha_id, captcha_answer } = req.body || {};
+
+    if (!username || !password || !captcha_id || !captcha_answer) {
+      return res.status(400).json({ success: false, message: 'Username, password, dan captcha wajib diisi' });
     }
 
+    // 1. Cek captcha lebih dulu (satu kali pakai) sebelum menyentuh data user.
+    const captchaEntry = loginCaptchaStore.get(captcha_id);
+    loginCaptchaStore.delete(captcha_id); // one-time use, baik cocok maupun tidak
+
+    if (!captchaEntry || captchaEntry.expiresAt <= Date.now()) {
+      return res.status(400).json({ success: false, message: 'Captcha kadaluarsa. Silakan muat ulang captcha.' });
+    }
+
+    if (String(captcha_answer).toLowerCase() !== String(captchaEntry.answer).toLowerCase()) {
+      return res.status(400).json({ success: false, message: 'Username, password, atau captcha tidak valid' });
+    }
+
+    // 2. Baru cek username/password.
     const user = await get('SELECT * FROM users WHERE username = ?', [username]);
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Username atau password salah' });
+      return res.status(401).json({ success: false, message: 'Username, password, atau captcha tidak valid' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
-      return res.status(401).json({ success: false, message: 'Username atau password salah' });
+      return res.status(401).json({ success: false, message: 'Username, password, atau captcha tidak valid' });
     }
 
+    // 3. Semua valid -> langsung buat sesi aktif (tanpa tahap aktivasi terpisah).
     const sessionId = crypto.randomUUID();
-    const activationCode = generateActivationCode();
-    const captcha = generateCaptcha();
-    const pendingExpiresAt = new Date(Date.now() + SESSION_PENDING_MINUTES * 60 * 1000).toISOString();
+    const refreshToken = generateRefreshToken();
+    const now = new Date();
+    const activeExpiresAt = new Date(now.getTime() + SESSION_ACTIVE_MINUTES * 60 * 1000).toISOString();
+    const refreshExpiresAt = new Date(now.getTime() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
     await run(
-      `INSERT INTO sessions (id, user_id, status, activation_code, captcha_id, captcha_answer, expires_at) VALUES (?, ?, 'pending', ?, ?, ?, ?)`,
-      [sessionId, user.id, activationCode, captcha.id, captcha.answer, pendingExpiresAt]
+      `INSERT INTO sessions (id, user_id, status, refresh_token, refresh_expires_at, expires_at)
+       VALUES (?, ?, 'active', ?, ?, ?)`,
+      [sessionId, user.id, refreshToken, refreshExpiresAt, activeExpiresAt]
     );
+
+    const modulAkses = await getUserModules(user.id);
 
     return res.status(201).json({
       success: true,
       data: {
+        refresh_token: refreshToken,
+        expires_in: SESSION_ACTIVE_MINUTES * 60,
         session_id: sessionId,
-        status: 'pending',
-        activation_code: activationCode,
-        captcha: {
-          id: captcha.id,
-          svg: captcha.svg
-        },
-        expires_in: SESSION_PENDING_MINUTES * 60
+        status: 'active',
+        user: {
+          username: user.username,
+          modul_akses: modulAkses
+        }
       }
     });
   } catch (error) {
@@ -491,8 +548,9 @@ initDatabase()
       console.log(`✅ SSO Backend berjalan di http://localhost:${PORT}`);
       console.log('📋 Endpoint:');
       console.log('   GET    /health');
+      console.log('   GET    /auth/captcha');
       console.log('   POST   /auth/login');
-      console.log('   POST   /auth/activate');
+      console.log('   POST   /auth/activate  (legacy, tidak dipakai alur login 1-halaman)');
       console.log('   POST   /auth/session');
       console.log('   POST   /auth/validate');
       console.log('   POST   /auth/refresh');

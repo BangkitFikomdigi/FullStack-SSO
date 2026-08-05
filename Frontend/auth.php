@@ -6,7 +6,6 @@ if (!empty($_SESSION['sso_token'])) {
     exit;
 }
 
-// Fungsi asli tidak diubah sama sekali
 $apiBase = 'http://localhost:3000';
 
 function callApi(string $path, array $payload = [], string $method = 'POST') {
@@ -33,64 +32,37 @@ function callApi(string $path, array $payload = [], string $method = 'POST') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = trim($_POST['password'] ?? '');
+    $captchaId = trim($_POST['captcha_id'] ?? '');
+    $captchaAnswer = trim($_POST['captcha_answer'] ?? '');
 
-    if ($username === '' || $password === '') {
+    if ($username === '' || $password === '' || $captchaId === '' || $captchaAnswer === '') {
+        $_SESSION['sso_login_username'] = $username;
         header('Location: login.php?error=1');
         exit;
     }
 
-    // 1. Tembak API Login (Tahap Pertama)
+    // Satu kali panggilan API: backend memvalidasi captcha + username + password
+    // sekaligus dan langsung mengembalikan token (tidak ada tahap kedua).
     $loginData = callApi('/auth/login', [
         'username' => $username,
         'password' => $password,
+        'captcha_id' => $captchaId,
+        'captcha_answer' => $captchaAnswer,
     ]);
 
-    if (!($loginData['success'] ?? false)) {
+    if (!($loginData['success'] ?? false) || empty($loginData['data']['refresh_token'])) {
+        $_SESSION['sso_login_username'] = $username;
         header('Location: login.php?error=1');
         exit;
     }
 
-    // 2. LOGIKA OTOMATISASI (Karena UI sekarang cuma 1 Tahap)
-    // Skenario A: Jika API backend kamu sudah diubah untuk langsung memberikan token
-    if (!empty($loginData['data']['refresh_token']) || !empty($loginData['data']['token'])) {
-        
-        $_SESSION['sso_token'] = $loginData['data']['refresh_token'] ?? $loginData['data']['token'];
-        $_SESSION['sso_session_id'] = $loginData['data']['session_id'] ?? '';
-        $_SESSION['sso_user'] = $loginData['data']['user']['username'] ?? $username;
-        $_SESSION['sso_modules'] = $loginData['data']['user']['modul_akses'] ?? [];
+    $_SESSION['sso_token'] = $loginData['data']['refresh_token'];
+    $_SESSION['sso_session_id'] = $loginData['data']['session_id'] ?? '';
+    $_SESSION['sso_user'] = $loginData['data']['user']['username'] ?? $username;
+    $_SESSION['sso_modules'] = $loginData['data']['user']['modul_akses'] ?? [];
 
-        header('Location: dashboard.php');
-        exit;
-        
-    } else {
-        // Skenario B: Jika API backend MASIH versi lama (mewajibkan aktivasi & captcha gambar SVG),
-        // kita tembak API aktivasinya secara otomatis dari belakang layar!
-        $sessionId = $loginData['data']['session_id'] ?? '';
-        $activationCode = $loginData['data']['activation_code'] ?? '';
-        $captchaId = $loginData['data']['captcha']['id'] ?? '';
-        
-        $activateData = callApi('/auth/activate', [
-            'session_id' => $sessionId,
-            'activation_code' => $activationCode,
-            'captcha_id' => $captchaId,
-            'captcha_answer' => 'bypass' // CATATAN: Tergantung pada pengaturan backend-mu
-        ]);
-
-        if (!($activateData['success'] ?? false)) {
-            // Jika ditolak backend, kembali ke login
-            header('Location: login.php?error=1');
-            exit;
-        }
-
-        // Jika berhasil di-bypass atau disetujui backend
-        $_SESSION['sso_token'] = $activateData['data']['refresh_token'] ?? '';
-        $_SESSION['sso_session_id'] = $activateData['data']['session_id'] ?? '';
-        $_SESSION['sso_user'] = $activateData['data']['user']['username'] ?? $username;
-        $_SESSION['sso_modules'] = $activateData['data']['user']['modul_akses'] ?? [];
-
-        header('Location: dashboard.php');
-        exit;
-    }
+    header('Location: dashboard.php');
+    exit;
 }
 
 header('Location: login.php');

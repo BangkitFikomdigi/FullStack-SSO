@@ -7,8 +7,48 @@ if (!empty($_SESSION['sso_token'])) {
     exit;
 }
 
+$apiBase = 'http://localhost:3000';
+
+function callApiGet(string $path) {
+    global $apiBase;
+
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'header' => "Accept: application/json\r\n",
+            'ignore_errors' => true,
+            'timeout' => 20,
+        ]
+    ]);
+
+    $response = @file_get_contents($apiBase . $path, false, $context);
+    if ($response === false) {
+        $err = error_get_last();
+        error_log('[login.php] Gagal konek ke ' . $apiBase . $path . ': ' . ($err['message'] ?? 'unknown error'));
+        return null;
+    }
+
+    $decoded = json_decode($response, true);
+    if ($decoded === null) {
+        error_log('[login.php] Response bukan JSON dari ' . $apiBase . $path . ': ' . substr($response, 0, 300));
+    }
+
+    return $decoded;
+}
+
+// Ambil captcha baru dari backend supaya bisa ditampilkan LANGSUNG di halaman
+// login yang sama (satu form, satu kali submit bersama username & password).
+$captchaData = callApiGet('/auth/captcha');
+$captchaId = $captchaData['data']['captcha']['id'] ?? '';
+$captchaSvg = $captchaData['data']['captcha']['svg'] ?? '';
+
+if ($captchaSvg === '') {
+    error_log('[login.php] Captcha kosong. Raw response: ' . json_encode($captchaData));
+}
+
 // Mengambil username jika sebelumnya sudah pernah diinput/gagal login
 $username = $_SESSION['sso_login_username'] ?? '';
+unset($_SESSION['sso_login_username']);
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -77,9 +117,10 @@ $username = $_SESSION['sso_login_username'] ?? '';
                     </div>
                 <?php endif; ?>
 
-                <!-- FORM LOGIN TERGABUNG -->
+                <!-- FORM LOGIN 1 HALAMAN (username, password, captcha sekaligus) -->
                 <form action="auth.php" method="POST" class="login-form" id="loginForm">
                     <input type="hidden" name="action" value="login">
+                    <input type="hidden" name="captcha_id" id="captcha_id" value="<?php echo htmlspecialchars($captchaId); ?>">
 
                     <div class="form-group">
                         <label for="username">Username / NIP</label>
@@ -98,12 +139,14 @@ $username = $_SESSION['sso_login_username'] ?? '';
                         </div>
                     </div>
 
-                    <!-- BAGIAN CAPTCHA DENGAN TOMBOL REFRESH -->
+                    <!-- CAPTCHA ASLI DARI BACKEND, TAMPIL DI HALAMAN YANG SAMA -->
                     <div class="form-group">
                         <label for="captcha_answer">Kode Captcha</label>
                         <div class="captcha-wrapper" style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-                            <canvas id="captchaCanvas" width="140" height="46" title="Klik untuk memperbarui token"></canvas>
-                            <button type="button" class="btn-refresh" onclick="generateCaptcha()" title="Ganti Token">
+                            <div id="captchaBox" style="background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:4px; display:flex; align-items:center; justify-content:center; min-width:160px; min-height:60px;">
+                                <?php echo $captchaSvg ?: '<span style="font-size:12px;color:#dc2626;padding:8px;">Gagal memuat captcha</span>'; ?>
+                            </div>
+                            <button type="button" class="btn-refresh" id="refreshCaptchaBtn" title="Ganti Captcha">
                                 <i class="fa-solid fa-rotate-right"></i>
                             </button>
                         </div>
@@ -147,80 +190,40 @@ $username = $_SESSION['sso_login_username'] ?? '';
             }
         }
 
-        // Fitur Generate Canvas Captcha
-        function generateCaptcha() {
-            const canvas = document.getElementById('captchaCanvas');
-            const ctx = canvas.getContext('2d');
-            
-            // Bersihkan dan set background kotak
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#f1f5f9';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Tambahkan noise (garis acak)
-            for (let i = 0; i < 6; i++) {
-                ctx.strokeStyle = `rgba(22, 163, 132, ${Math.random() * 0.5 + 0.2})`;
-                ctx.beginPath();
-                ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
-                ctx.lineTo(Math.random() * canvas.width, Math.random() * canvas.height);
-                ctx.stroke();
-            }
+        // Ambil captcha baru dari backend (lewat captcha.php sebagai proxy)
+        // tanpa reload halaman, supaya tetap 1 layar.
+        async function refreshCaptcha() {
+            const box = document.getElementById('captchaBox');
+            const idField = document.getElementById('captcha_id');
+            const answerField = document.getElementById('captcha_answer');
 
-            // Buat 5 karakter acak untuk Captcha
-            const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-            let captchaText = '';
-            for (let i = 0; i < 5; i++) {
-                captchaText += chars.charAt(Math.floor(Math.random() * chars.length));
-            }
-            
-            // Simpan teks di atribut data untuk validasi form
-            canvas.setAttribute('data-code', captchaText);
-
-            // Tulis teks di tengah Canvas
-            ctx.font = 'bold 22px Inter, sans-serif';
-            ctx.fillStyle = '#0f172a';
-            ctx.textBaseline = 'middle';
-            ctx.textAlign = 'center';
-            
-            // Efek posisi & rotasi acak pada teks
-            let x = 25;
-            for (let i = 0; i < captchaText.length; i++) {
-                ctx.save();
-                ctx.translate(x, canvas.height / 2);
-                let angle = (Math.random() - 0.5) * 0.4;
-                ctx.rotate(angle);
-                ctx.fillText(captchaText[i], 0, 0);
-                ctx.restore();
-                x += 22;
+            box.style.opacity = '0.5';
+            try {
+                const res = await fetch('captcha.php', { cache: 'no-store' });
+                const json = await res.json();
+                if (json.success) {
+                    box.innerHTML = json.svg;
+                    idField.value = json.id;
+                    answerField.value = '';
+                    answerField.focus();
+                }
+            } catch (e) {
+                console.error('Gagal memuat captcha baru', e);
+            } finally {
+                box.style.opacity = '1';
             }
         }
 
-        // Validasi form saat submit
-        document.getElementById('loginForm').addEventListener('submit', function(e) {
-            const inputCaptcha = document.getElementById('captcha_answer').value.toUpperCase();
-            const actualCaptcha = document.getElementById('captchaCanvas').getAttribute('data-code');
+        document.getElementById('refreshCaptchaBtn').addEventListener('click', refreshCaptcha);
+        document.getElementById('captchaBox').addEventListener('click', refreshCaptcha);
 
-            if (inputCaptcha !== actualCaptcha) {
-                e.preventDefault(); // Hentikan form agar tidak terkirim
-                alert('Kode Captcha yang Anda masukkan salah. Silakan coba lagi!');
-                generateCaptcha(); // Refresh captcha
-                document.getElementById('captcha_answer').value = ''; // Kosongkan input
-                document.getElementById('captcha_answer').focus();
-            } else {
-                // Efek loading tombol jika captcha benar
-                const btn = document.getElementById('submitBtn');
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Memproses...';
-                btn.style.opacity = '0.8';
-                btn.style.pointerEvents = 'none';
-            }
+        // Efek loading tombol saat submit
+        document.getElementById('loginForm').addEventListener('submit', function() {
+            const btn = document.getElementById('submitBtn');
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Memproses...';
+            btn.style.opacity = '0.8';
+            btn.style.pointerEvents = 'none';
         });
-
-        // Jalankan captcha saat halaman pertama kali dimuat
-        window.onload = function() {
-            generateCaptcha();
-            // Bisa juga di-refresh dengan mengklik area kotaknya langsung
-            document.getElementById('captchaCanvas').addEventListener('click', generateCaptcha);
-        };
     </script>
 </body>
 </html>
