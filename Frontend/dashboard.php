@@ -81,36 +81,36 @@ $initial = strtoupper(substr($username, 0, 1));
       </div>
     </div>
 
-    <div class="apps-grid">
-      <!-- Card 1 -->
-      <a href="#" class="app-card">
-        <div class="card-icon"><i class="fas fa-stethoscope"></i></div>
-        <h3 class="card-title">SIMRS</h3>
-        <p class="card-desc">Sistem informasi manajemen rumah sakit.</p>
-      </a>
-
-      <!-- Card 2 -->
-      <a href="#" class="app-card">
-        <div class="card-icon"><i class="fas fa-heartbeat"></i></div>
-        <h3 class="card-title">AMINO_MOBILE</h3>
-        <p class="card-desc">Layanan mobile untuk staf dan pasien.</p>
-      </a>
-
-      <!-- Card 3 -->
-      <a href="#" class="app-card">
-        <div class="card-icon"><i class="fas fa-bullhorn"></i></div>
-        <h3 class="card-title">LAPOR_AMINO</h3>
-        <p class="card-desc">Kanal pelaporan dan pengaduan internal.</p>
-      </a>
-
-      <!-- Card 4 -->
-      <a href="#" class="app-card">
-        <div class="card-icon"><i class="fas fa-user-shield"></i></div>
-        <h3 class="card-title">WBS</h3>
-        <p class="card-desc">Whistleblowing system untuk pelaporan pelanggaran.</p>
-      </a>
+    <div class="apps-grid" id="appsGrid">
+      <?php if (empty($modules)): ?>
+        <p class="empty-state">Belum ada aplikasi yang dapat diakses.</p>
+      <?php else: ?>
+        <?php foreach ($modules as $module):
+          $code = $module['code'] ?? '';
+          $name = $module['name'] ?? $code ?: 'Module';
+          $url = $module['url'] ?? '#';
+          $style = $moduleStyles[$code] ?? $defaultStyle;
+          
+          // Tambahan: Menangkap data deskripsi dari backend. 
+          // Jika backend belum mengirim deskripsi, teks cadangan akan otomatis muncul.
+          $description = $module['description'] ?? 'Layanan sistem informasi dan portal internal.';
+        ?>
+          <a class="app-card" href="<?php echo htmlspecialchars($url); ?>" target="_blank" rel="noopener noreferrer" data-name="<?php echo htmlspecialchars(strtolower($name)); ?>">
+            
+            <div class="card-icon">
+              <!-- Ikon tetap memanggil variabel style bawaanmu -->
+              <i class="<?php echo htmlspecialchars($style['icon']); ?>"></i>
+            </div>
+            
+            <h3 class="card-title"><?php echo htmlspecialchars($name); ?></h3>
+            
+            <p class="card-desc"><?php echo htmlspecialchars($description); ?></p>
+            
+          </a>
+        <?php endforeach; ?>
+      <?php endif; ?>
     </div>
-  </div>
+</div>
 
   <script>
     // Tutup dropdown user saat klik di luar
