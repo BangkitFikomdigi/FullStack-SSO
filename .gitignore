@@ -1,6 +1,2 @@
 # ======= BACKEND (Node.js) - WAJIB! ======
 Backend/private.pem
-
-# ======= FRONTEND (PHP) =======
-Frontend/vendor/
-Frontend/composer.lock
