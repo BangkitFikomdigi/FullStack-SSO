@@ -73,7 +73,7 @@ function generateCaptcha() {
   return {
     id: crypto.randomUUID(),
     svg: captcha.data,
-    answer: captcha.text.toLowerCase()
+    answer: captcha.text
   };
 }
 
@@ -262,7 +262,7 @@ if (!captchaEntry || captchaEntry.expiresAt <= Date.now()) {
       return res.status(400).json({ success: false, message: 'Captcha kadaluarsa. Silakan muat ulang captcha.' });
     }
 
-    if (String(captcha_answer).toLowerCase() !== String(captchaEntry.answer).toLowerCase()) {
+    if (String(captcha_answer) !== String(captchaEntry.answer)) {
       await logLoginActivity({ username, status: 'failed', reason: 'captcha_failed', req });
       return res.status(400).json({ success: false, message: 'Username, password, atau captcha tidak valid' });
     }
@@ -342,7 +342,7 @@ app.post('/auth/activate', async (req, res) => {
       return res.status(429).json({ success: false, message: 'Terlalu banyak percobaan. Session dikunci.' });
     }
 
-    const captchaMatch = session.captcha_id === captcha_id && String(captcha_answer).toLowerCase() === String(session.captcha_answer).toLowerCase();
+    const captchaMatch = session.captcha_id === captcha_id && String(captcha_answer) === String(session.captcha_answer);
     const codeMatch = String(activation_code) === String(session.activation_code);
 
     if (!captchaMatch || !codeMatch) {
